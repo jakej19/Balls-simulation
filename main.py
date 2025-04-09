@@ -1,5 +1,6 @@
 from os import access
 from webbrowser import BackgroundBrowser
+from matplotlib import container
 from matplotlib.patches import Circle
 import numpy as np
 import matplotlib.pyplot as plt
@@ -7,6 +8,9 @@ from matplotlib.animation import FuncAnimation
 import pygame
 import sys
 import math
+import pymunk
+import pymunk.pygame_util
+import random
 
 pygame.init()
 # Screen properties
@@ -16,168 +20,140 @@ pygame.display.set_caption("Bouncy balls")
 
 clock = pygame.time.Clock()
 FPS = 60
-
 background_color = (30, 30, 30)
+
 # Constants
 g = 500
-restitution = 1.001
+restitution = 1.01
+physics_steps_per_frame = 10
+space = pymunk.Space()
+space.gravity = (0, g)
+space.iterations = 30
 
 
 class Ball:
-    def __init__(self, pos, vel, radius, color):
-        self.pos = pygame.Vector2(pos)
-        self.vel = pygame.Vector2(vel)
+    def __init__(self, space, pos, vel, radius, color):
+
         self.radius = radius
         self.color = color
+        mass = 1
+        moment = pymunk.moment_for_circle(mass, 0, radius)
 
-    def update(self, dt):
-        """update ball location given acceleration and change in time.
-        Args:
-            acceleration (np.array): [x_acceleration, y_acceleration]
-            dt (float): time step size
-        """
-        self.vel.y += g * dt
+        self.body = pymunk.Body(mass, moment)
+        self.body.position = pos
+        self.body.velocity = vel
 
-        self.pos += self.vel * dt
+        self.shape = pymunk.Circle(self.body, radius)
+        self.shape.elasticity = restitution
+        self.shape.friction = 0
 
-    def draw(self, surface):
+        space.add(self.body, self.shape)
+
+    def draw(self, screen):
         # Draw the ball as a circle on the given surface
-        pygame.draw.circle(
-            surface, self.color, (int(self.pos.x), int(self.pos.y)), self.radius
-        )
-
-    def collides_with_circle(self, other):
-        distance_sq = (self.pos - other.pos).length_squared()
-        radii_sum_sq = (self.radius + other.radius) ** 2
-        return distance_sq <= radii_sum_sq
+        pos = self.body.position
+        pygame.draw.circle(screen, self.color, (int(pos.x), int(pos.y)), self.radius)
 
 
-class CircleObject:
-    def __init__(self, pos, radius, color, width=3):
-        self.pos = pygame.Vector2(pos)
-        self.radius = radius
-        self.color = color
-        self.width = width
+def create_container(space, pos, radius, num_segments=32, thickness=3, elasticity=1.0):
+    static_body = space.static_body
+    segments = []
+    for i in range(num_segments):
+        angle1 = 2 * math.pi * i / num_segments
+        angle2 = 2 * math.pi * (i + 1) / num_segments
 
-    def draw(self, surface):
-        pygame.draw.circle(
-            surface,
-            self.color,
-            (int(self.pos.x), int(self.pos.y)),
-            self.radius,
-            self.width,
-        )
+        p1 = pos + pymunk.Vec2d(radius * math.cos(angle1), radius * math.sin(angle1))
+        p2 = pos + pymunk.Vec2d(radius * math.cos(angle2), radius * math.sin(angle2))
 
-
-def handle_ball_collision(ball1, ball2):
-    """
-    Process an elastic collision between two balls.
-    Assumes equal mass for both balls.
-    """
-    # Vector from ball1 to ball2
-    collision_vector = ball2.pos - ball1.pos
-    distance = collision_vector.length()
-
-    # If the distance is zero (overlapping centers), skip collision response to avoid division by zero.
-    if distance == 0:
-        normal = pygame.Vector2(1, 0)
-        distance = 0.01  # minimal distance
-    else:
-        normal = collision_vector / distance
-
-    penetration_depth = (ball1.radius + ball2.radius) - distance
-
-    if penetration_depth > 0:
-        # Position correction: push each ball away by half of the overlap distance
-        angle = -math.atan2(ball1.pos.y - ball2.pos.y, ball1.pos.x - ball2.pos.x)
-
-        correction = penetration_depth / 2
-
-        ball1.pos.x += math.cos(angle) * correction
-        ball1.pos.y += math.sin(angle) * correction
-        ball2.pos.x -= math.cos(angle) * correction
-        ball1.pos.y -= math.sin(angle) * correction
-
-        # Compute relative velocity along the collision normal.
-        relative_velocity = ball1.vel - ball2.vel
-        vel_along_normal = relative_velocity.dot(normal)
-
-        if vel_along_normal < 0:
-            # Compute impulse scalar.
-            # Using equal mass (assumed 1) for simplicity. Adjust the denominator if masses differ.
-            impulse_magnitude = -(1 + restitution) * vel_along_normal / 2
-            impulse = normal * impulse_magnitude
-
-            # Apply impulse (adjust velocities)
-            ball1.vel += impulse
-            ball2.vel -= impulse
+        segment = pymunk.Segment(static_body, p1, p2, thickness)
+        segment.elasticity = elasticity
+        segment.friction = 0
+        segments.append(segment)
+        space.add(segment)
+    return segments
 
 
-def handle_ball_container_collision(ball, container):
-    """
-    Check and handle a collision of a ball with the interior boundary of the container.
-    The ball collides with the wall if the distance between its center and the container's
-    center is greater than container.radius - ball.radius.
-    """
-    collision_vector = ball.pos - container.pos
-    distance = collision_vector.length()
-    allowed_distance = container.radius - ball.radius
+container_centre = pymunk.Vec2d(width / 2, height / 2)
+container_radius = 280
+container_segments = create_container(space, container_centre, container_radius)
 
-    if distance > allowed_distance:
-        # Compute the collision normal (from container to ball).
-        normal = collision_vector.normalize()
-        # Reflect ball's velocity: v' = v - 2*(v dot n)*n.
-        ball.vel = ball.vel - 2 * ball.vel.dot(normal) * normal
-        # Correct the ball's position to sit exactly on the boundary.
-        ball.pos = container.pos + normal * allowed_distance
+"""possible_colors = {
+    "Violet": (144, 0, 211),
+    "Indigo": (75, 0, 130),
+    "Blue": (0, 0, 255),
+    "Green": (0, 255, 0),
+    "Yellow": (255, 255, 0),
+    "Orange": (255, 127, 0),
+    "Red": (255, 0, 0),
+}"""
+possible_colors = [
+    (144, 0, 211),
+    (75, 0, 130),
+    (0, 0, 255),
+    (0, 255, 0),
+    (255, 255, 0),
+    (255, 127, 0),
+    (255, 0, 0),
+]
+unused_colors = possible_colors.copy()
 
 
-def check_all_collisions(balls, objects):
-    """
-    Check collisions between all balls (pairwise) and between each ball and static objects.
-    """
-    # Check collisions among balls
-    for i in range(len(balls)):
-        for j in range(i + 1, len(balls)):
-            if balls[i].collides_with_circle(balls[j]):
-                handle_ball_collision(balls[i], balls[j])
+def draw_container(screen, pos, radius, color=(155, 155, 155), line_width=2):
+    pygame.draw.circle(screen, color, (int(pos.x), int(pos.y)), radius, line_width)
 
-    # Check collisions between each ball and static circle objects
-    for ball in balls:
-        for obj in objects:
-            handle_ball_container_collision(ball, obj)
+
+def get_rand_color(colors):
+    if not colors:
+        colors = possible_colors.copy()
+    color = random.choice(colors)
+    colors.remove(color)
+    return color
 
 
 balls = [
-    Ball(pos=(400, 100), vel=(0, 0), radius=10, color=(0, 150, 255)),
-    Ball(pos=(300, 100), vel=(0, 0), radius=10, color=(0, 150, 255)),
-    Ball(pos=(500, 101), vel=(0, 0), radius=10, color=(0, 150, 255)),
+    Ball(
+        space,
+        pos=(400, 100),
+        vel=(0, 0),
+        radius=10,
+        color=get_rand_color(unused_colors),
+    ),
+    Ball(
+        space,
+        pos=(300, 100),
+        vel=(0, 0),
+        radius=10,
+        color=get_rand_color(unused_colors),
+    ),
+    Ball(
+        space,
+        pos=(500, 100),
+        vel=(0, 0),
+        radius=10,
+        color=get_rand_color(unused_colors),
+    ),
 ]
-objects = [
-    CircleObject(
-        pos=(int(width / 2), int(height / 2)), radius=280, color=(155, 155, 155)
-    )
-]
+
 running = True
 
 
 while running:
-    dt = clock.tick(FPS) / 1000.0
+    dt = clock.tick(FPS) / 1000
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
 
-    for ball in balls:
-        ball.update(dt)
+    sub_dt = dt / physics_steps_per_frame
+    for _ in range(physics_steps_per_frame):
+        space.step(sub_dt)
 
-    check_all_collisions(balls, objects)
+
     screen.fill(background_color)
-
+    draw_container(screen, container_centre, container_radius)
     for ball in balls:
         ball.draw(screen)
-    for obj in objects:
-        obj.draw(screen)
+
     pygame.display.flip()
 
 pygame.quit()
