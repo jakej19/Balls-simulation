@@ -102,7 +102,6 @@ def on_ball_static_collision(arbiter, space, data):
     midi_out.note_on(note, velocity)
     return True
 
-
 container_centre = pymunk.Vec2d(width / 2, height / 2)
 container_radius = 280
 container_segments = create_container(space, container_centre, container_radius)
@@ -112,15 +111,6 @@ handler = space.add_collision_handler(BALL_COLLISION_TYPE, STATIC_COLLISION_TYPE
 handler.begin = on_ball_static_collision
 
 
-"""possible_colors = {
-    "Violet": (144, 0, 211),
-    "Indigo": (75, 0, 130),
-    "Blue": (0, 0, 255),
-    "Green": (0, 255, 0),
-    "Yellow": (255, 255, 0),
-    "Orange": (255, 127, 0),
-    "Red": (255, 0, 0),
-}"""
 possible_colors = [
     (144, 0, 211),
     (75, 0, 130),
@@ -132,6 +122,7 @@ possible_colors = [
 ]
 unused_colors = possible_colors.copy()
 
+
 def draw_container(screen, pos, radius, color=(155, 155, 155), line_width=2):
     pygame.draw.circle(screen, color, (int(pos.x), int(pos.y)), radius, line_width)
 
@@ -139,10 +130,11 @@ def draw_container(screen, pos, radius, color=(155, 155, 155), line_width=2):
 def get_rand_color(colors):
     if not colors:
         colors = possible_colors.copy()
-        
-    color = np.array(random.choice(colors))
+
+    color = random.choice(colors)
     colors.remove(color)
-    color += np.random.randint(-30, 30, 3)
+    color = np.array(color)
+    color += np.random.randint(-50, 50, 3)
     color = color.clip(0, 255)
 
     return color
