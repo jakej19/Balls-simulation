@@ -1,19 +1,12 @@
 from os import access
-from webbrowser import BackgroundBrowser
-from matplotlib import container
-from matplotlib.patches import Circle
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
 import pygame
 import sys
 import math
 import pymunk
-import pymunk.pygame_util
 import random
 import pygame.midi
 from utils.music import NOTES
-import time
 import numpy as np
 
 
